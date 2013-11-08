@@ -1,0 +1,3 @@
+name = GMaps Block
+description = Creates a block containing a Google Map
+core = 7.x
