@@ -43,9 +43,9 @@ function gmaps_block_block_info() {
   $deltas = variable_get('gmaps_block_ids', array());
 
   foreach ($deltas AS $delta) {
-    $blocks[$delta]['info'] = t('Gmap Block -' . $delta);
-    // Menu blocks can't be cached because each menu item can have
-    // a custom access callback. menu.inc manages its own caching.
+    $title = db_query("SELECT title FROM {block} WHERE module = :module AND delta = :delta",
+                       array(':module' => 'gmaps_block', ':delta' => $delta))->fetchField();
+    $blocks[$delta]['info'] = check_plain($title);
     $blocks[$delta]['cache'] = DRUPAL_NO_CACHE;
   }
   return $blocks;
@@ -163,4 +163,45 @@ function gmaps_block_block_save($delta = '', $edit = array()) {
       variable_set("gmaps_block_{$delta}_altitude", $edit['altitude']);
     }
   }
+}
+
+/**
+ * Returns the configuration for the requested block delta.
+ *
+ * @param $delta
+ *   string The delta that uniquely identifies the block in the block system. If
+ *   not specified, the default configuration will be returned.
+ * @return
+ *   array An associated array of configuration options.
+ */
+function gmaps_block_get_config($delta = NULL) {
+
+  $config = array(
+    'delta'    => $delta,
+    'title'    => '',
+    'latitude' => 0,
+    'altitude' => 0,
+  );
+
+  // Get the block configuration options.
+  if ($delta) {
+    $config['title'] = db_query("SELECT title FROM {block} WHERE module = :module AND delta = :delta",
+                       array(':module' => 'gmaps_block', ':delta' => $delta))->fetchField();
+    $config['latitude']  = variable_get("gmaps_block_{$delta}_latitude",  $config['latitude']);
+    $config['altitude'] = variable_get("gmaps_block_{$delta}_altitude", $config['altitude']);
+  }
+
+  return $config;
+}
+
+/**
+ * Implements hook_block_view().
+ */
+function gmaps_block_block_view($delta = '') {
+  $data = gmaps_block_get_config($delta);
+
+  $block['subject'] = $data['title'];
+  $block['content'] = 'latidud -> ' . $data['latitude'] . ' altitud -> ' . $data['altitude'];
+
+  return $block;
 }
