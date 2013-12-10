@@ -45,7 +45,10 @@ function gmaps_block_block_info() {
   foreach ($deltas AS $delta) {
     $title = db_query("SELECT title FROM {block} WHERE module = :module AND delta = :delta",
                        array(':module' => 'gmaps_block', ':delta' => $delta))->fetchField();
-    $blocks[$delta]['info'] = check_plain($title);
+    // If set admin_title, else use default title
+    $admin_title = variable_get("gmaps_block_{$delta}_admin_title",  $title);
+
+    $blocks[$delta]['info'] = check_plain($admin_title);
     $blocks[$delta]['cache'] = DRUPAL_NO_CACHE;
   }
   return $blocks;
@@ -58,14 +61,6 @@ function gmaps_block_block_info() {
 function gmaps_block_add_block_form($form, &$form_state) {
   module_load_include('inc', 'block', 'block.admin');
   $form = block_admin_configure($form, $form_state, 'gmaps_block', NULL);
-
-  // Other modules should be able to use hook_form_block_add_block_form_alter()
-  // to modify this form, so add a base form ID.
-  //$form_state['build_info']['base_form_id'] = 'block_add_block_form';
-
-  // Prevent block_add_block_form_validate/submit() from being automatically
-  // added because of the base form ID by providing these handlers manually.
-  //$form['#validate'] = array();
   $form['#submit'] = array('gmaps_block_add_block_form_submit');
 
   return $form;
@@ -110,16 +105,6 @@ function gmaps_block_add_block_form_submit($form, &$form_state) {
   }
   $query->execute();
 
-  /*$query = db_insert('block_role')->fields(array('rid', 'module', 'delta'));
-  foreach (array_filter($form_state['values']['roles']) as $rid) {
-    $query->values(array(
-      'rid' => $rid,
-      'module' => $form_state['values']['module'],
-      'delta' => $delta,
-    ));
-  }
-  $query->execute();*/
-
   drupal_set_message(t('The block has been created.'));
   cache_clear_all();
   $form_state['redirect'] = 'admin/structure/block';
@@ -134,6 +119,13 @@ function gmaps_block_block_configure($delta = '') {
   // All we need to provide is the specific configuration options for our
   // block. Drupal will take care of the standard block configuration options
   // (block title, page visibility, etc.) and the save button.
+  $form['admin_title'] = array(
+    '#type' => 'textfield',
+    '#default_value' => variable_get("gmaps_block_{$delta}_admin_title"),
+    '#title' => t('Administrative title'),
+    '#required' => TRUE,
+    '#description' => t('A brief description of your block.'),
+  );
   $form['latitude'] = array(
     '#type' => 'textfield',
     '#title' => t('Latitude'),
@@ -141,12 +133,33 @@ function gmaps_block_block_configure($delta = '') {
     '#description' => t('Location latitude.'),
     '#default_value' => variable_get("gmaps_block_{$delta}_latitude"),
   );
-  $form['altitude'] = array(
+  $form['longitude'] = array(
     '#type' => 'textfield',
-    '#title' => t('Altitude'),
+    '#title' => t('Longitude'),
     '#size' => 30,
-    '#description' => t('Location altitude.'),
-    '#default_value' => variable_get("gmaps_block_{$delta}_altitude"),
+    '#description' => t('Location longitude.'),
+    '#default_value' => variable_get("gmaps_block_{$delta}_longitude"),
+  );
+  $form['width'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Width'),
+    '#size' => 30,
+    '#description' => t('Map width.'),
+    '#default_value' => variable_get("gmaps_block_{$delta}_width"),
+  );
+  $form['height'] = array(
+    '#type' => 'textfield',
+    '#title' => t('Height'),
+    '#size' => 30,
+    '#description' => t('Map height.'),
+    '#default_value' => variable_get("gmaps_block_{$delta}_height"),
+  );
+  $form['info_content'] = array(
+    '#type' => 'text_format',
+    '#title' => t('Info window content'),
+    '#rows' => 10,
+    '#description' => t('Content of the info window when clicking'),
+    '#default_value' => variable_get("gmaps_block_{$delta}_info_content"),
   );
 
   return $form;
@@ -158,10 +171,12 @@ function gmaps_block_block_configure($delta = '') {
  */
 function gmaps_block_block_save($delta = '', $edit = array()) {
   if (!empty($delta)) {
-    if (empty($config['exported_to_code'])) {
-      variable_set("gmaps_block_{$delta}_latitude", $edit['latitude']);
-      variable_set("gmaps_block_{$delta}_altitude", $edit['altitude']);
-    }
+    variable_set("gmaps_block_{$delta}_admin_title", $edit['admin_title']);
+    variable_set("gmaps_block_{$delta}_latitude", $edit['latitude']);
+    variable_set("gmaps_block_{$delta}_longitude", $edit['longitude']);
+    variable_set("gmaps_block_{$delta}_width", $edit['width']);
+    variable_set("gmaps_block_{$delta}_height", $edit['height']);
+    variable_set("gmaps_block_{$delta}_info_content", $edit['info_content']['value']);
   }
 }
 
@@ -181,17 +196,63 @@ function gmaps_block_get_config($delta = NULL) {
     'title'    => '',
     'latitude' => 0,
     'altitude' => 0,
+    'info_content' => ''
   );
 
   // Get the block configuration options.
   if ($delta) {
     $config['title'] = db_query("SELECT title FROM {block} WHERE module = :module AND delta = :delta",
                        array(':module' => 'gmaps_block', ':delta' => $delta))->fetchField();
+    $config['admin_title']  = variable_get("gmaps_block_{$delta}_admin_title",  $config['admin_title']);
     $config['latitude']  = variable_get("gmaps_block_{$delta}_latitude",  $config['latitude']);
-    $config['altitude'] = variable_get("gmaps_block_{$delta}_altitude", $config['altitude']);
+    $config['altitude'] = variable_get("gmaps_block_{$delta}_longitude", $config['longitude']);
+    $config['width']  = variable_get("gmaps_block_{$delta}_width",  $config['width']);
+    $config['height'] = variable_get("gmaps_block_{$delta}_height", $config['height']);
+    $config['info_content'] = variable_get("gmaps_block_{$delta}_info_content", $config['info_content']);
   }
 
   return $config;
+}
+
+/**
+ * Menu callback: confirm deletion of gmaps blocks.
+ */
+function menu_block_delete($form, &$form_state, $delta = 0) {
+  $title = db_query("SELECT title FROM {block} WHERE module = :module AND delta = :delta",
+                       array(':module' => 'gmaps_block', ':delta' => $delta))->fetchField();
+    // If set admin_title, else use default title
+    $admin_title = variable_get("gmaps_block_{$delta}_admin_title",  $title);
+  $form['block_title'] = array('#type' => 'hidden', '#value' => $title);
+  $form['delta'] = array('#type' => 'hidden', '#value' => $delta);
+
+  return confirm_form($form, t('Are you sure you want to delete the "%name" block?', array('%name' => $title)), 'admin/structure/block', NULL, t('Delete'), t('Cancel'));
+}
+
+/**
+ * Deletion of gmaps blocks.
+ */
+function menu_block_delete_submit($form, &$form_state) {
+  // Remove the menu block configuration variables.
+  $delta = $form_state['values']['delta'];
+  $block_ids = variable_get('menu_block_ids', array());
+  unset($block_ids[array_search($delta, $block_ids)]);
+  sort($block_ids);
+  variable_set('gmaps_block_ids', $block_ids);
+  variable_del("gmaps_block_{$delta}_admin_title");
+  variable_del("gmaps_block_{$delta}_latitude");
+  variable_del("gmaps_block_{$delta}_longitude");
+  variable_del("gmaps_block_{$delta}_width");
+  variable_del("gmaps_block_{$delta}_height");
+  variable_del("gmaps_block_{$delta}_info_content");
+
+  db_delete('block')
+    ->condition('module', 'gmaps_block')
+    ->condition('delta', $delta)
+    ->execute();
+  drupal_set_message(t('The block "%name" has been removed.', array('%name' => $form_state['values']['block_title'])));
+  cache_clear_all();
+  $form_state['redirect'] = 'admin/structure/block';
+  return;
 }
 
 /**
@@ -201,7 +262,39 @@ function gmaps_block_block_view($delta = '') {
   $data = gmaps_block_get_config($delta);
 
   $block['subject'] = $data['title'];
-  $block['content'] = 'latidud -> ' . $data['latitude'] . ' altitud -> ' . $data['altitude'];
+  $block['content'] = gmaps_block_draw_map($data['latitude'], $data['altitude'],$data['width'], $data['height'], $data['info_content']);
 
   return $block;
+}
+
+function gmaps_block_draw_map($lat, $alt, $width, $height, $info_content) {
+  return <<<HTML
+  <div id="map_canvas" style="width:{$width}px; height:{$height}px;"></div>
+    <script type="text/javascript" src="//maps.googleapis.com/maps/api/js?sensor=false"></script>
+    <script type="text/javascript">
+      var posicion = new google.maps.LatLng({$lat}, {$alt});
+        var mapOptions = {
+          center: posicion,
+          zoom: 15,
+          mapTypeId: google.maps.MapTypeId.ROADMAP
+        };
+        var map = new google.maps.Map(document.getElementById("map_canvas"),
+            mapOptions);
+
+        var marker = new google.maps.Marker({
+        position: posicion,
+        map: map,
+        icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+        title: "[CONF] Mi casa"
+      });
+
+        var info = new google.maps.InfoWindow({
+          content: '{$info_content}'
+        });
+
+        google.maps.event.addListener(marker, "click", function() {
+          info.open(map, marker);
+        });
+      </script>
+HTML;
 }
