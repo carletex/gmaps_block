@@ -32,6 +32,14 @@ function gmaps_block_menu() {
       'type' => MENU_LOCAL_ACTION,
     );
 
+    $items['admin/structure/block/delete-gmaps-block'] = array(
+      'title' => 'Delete gmaps block',
+      'page callback' => 'drupal_get_form',
+      'page arguments' => array('gmaps_block_delete'),
+      'access arguments' => array('administer blocks'),
+      'type' => MENU_CALLBACK,
+    );
+
   return $items;
 }
 
@@ -130,6 +138,7 @@ function gmaps_block_block_configure($delta = '') {
     '#type' => 'textfield',
     '#title' => t('Latitude'),
     '#size' => 30,
+    '#required' => TRUE,
     '#description' => t('Location latitude.'),
     '#default_value' => variable_get("gmaps_block_{$delta}_latitude"),
   );
@@ -137,6 +146,7 @@ function gmaps_block_block_configure($delta = '') {
     '#type' => 'textfield',
     '#title' => t('Longitude'),
     '#size' => 30,
+    '#required' => TRUE,
     '#description' => t('Location longitude.'),
     '#default_value' => variable_get("gmaps_block_{$delta}_longitude"),
   );
@@ -145,14 +155,14 @@ function gmaps_block_block_configure($delta = '') {
     '#title' => t('Width'),
     '#size' => 30,
     '#description' => t('Map width.'),
-    '#default_value' => variable_get("gmaps_block_{$delta}_width"),
+    '#default_value' => variable_get("gmaps_block_{$delta}_width", "260"),
   );
   $form['height'] = array(
     '#type' => 'textfield',
     '#title' => t('Height'),
     '#size' => 30,
     '#description' => t('Map height.'),
-    '#default_value' => variable_get("gmaps_block_{$delta}_height"),
+    '#default_value' => variable_get("gmaps_block_{$delta}_height", "300"),
   );
   $form['info_content'] = array(
     '#type' => 'text_format',
@@ -194,8 +204,11 @@ function gmaps_block_get_config($delta = NULL) {
   $config = array(
     'delta'    => $delta,
     'title'    => '',
-    'latitude' => 0,
-    'altitude' => 0,
+    'admin_title'    => '',
+    'latitude' => '',
+    'longitude' => '',
+    'width' => '',
+    'height' => '',
     'info_content' => ''
   );
 
@@ -217,24 +230,24 @@ function gmaps_block_get_config($delta = NULL) {
 /**
  * Menu callback: confirm deletion of gmaps blocks.
  */
-function menu_block_delete($form, &$form_state, $delta = 0) {
+function gmaps_block_delete($form, &$form_state, $delta = 0) {
   $title = db_query("SELECT title FROM {block} WHERE module = :module AND delta = :delta",
                        array(':module' => 'gmaps_block', ':delta' => $delta))->fetchField();
-    // If set admin_title, else use default title
-    $admin_title = variable_get("gmaps_block_{$delta}_admin_title",  $title);
-  $form['block_title'] = array('#type' => 'hidden', '#value' => $title);
+  // If set admin_title, else use default title
+  $admin_title = variable_get("gmaps_block_{$delta}_admin_title",  $title);
+  $form['block_title'] = array('#type' => 'hidden', '#value' => $admin_title);
   $form['delta'] = array('#type' => 'hidden', '#value' => $delta);
 
-  return confirm_form($form, t('Are you sure you want to delete the "%name" block?', array('%name' => $title)), 'admin/structure/block', NULL, t('Delete'), t('Cancel'));
+  return confirm_form($form, t('Are you sure you want to delete the "%name" block?', array('%name' => $admin_title)), 'admin/structure/block', '', t('Delete'), t('Cancel'));
 }
 
 /**
  * Deletion of gmaps blocks.
  */
-function menu_block_delete_submit($form, &$form_state) {
+function gmaps_block_delete_submit($form, &$form_state) {
   // Remove the menu block configuration variables.
   $delta = $form_state['values']['delta'];
-  $block_ids = variable_get('menu_block_ids', array());
+  $block_ids = variable_get('gmaps_block_ids', array());
   unset($block_ids[array_search($delta, $block_ids)]);
   sort($block_ids);
   variable_set('gmaps_block_ids', $block_ids);
@@ -255,6 +268,7 @@ function menu_block_delete_submit($form, &$form_state) {
   return;
 }
 
+
 /**
  * Implements hook_block_view().
  */
@@ -266,6 +280,7 @@ function gmaps_block_block_view($delta = '') {
 
   return $block;
 }
+
 
 function gmaps_block_draw_map($lat, $alt, $width, $height, $info_content) {
   return <<<HTML
