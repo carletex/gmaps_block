@@ -274,18 +274,17 @@ function gmaps_block_delete_submit($form, &$form_state) {
  */
 function gmaps_block_block_view($delta = '') {
   $data = gmaps_block_get_config($delta);
-
+  drupal_add_js('//maps.googleapis.com/maps/api/js?sensor=false', 'external');
   $block['subject'] = $data['title'];
-  $block['content'] = gmaps_block_draw_map($data['latitude'], $data['altitude'],$data['width'], $data['height'], $data['info_content']);
+  $block['content'] = gmaps_block_draw_map($data['latitude'], $data['altitude'],$data['width'], $data['height'], $data['info_content'], $delta);
 
   return $block;
 }
 
 
-function gmaps_block_draw_map($lat, $alt, $width, $height, $info_content) {
+function gmaps_block_draw_map($lat, $alt, $width, $height, $info_content, $delta) {
   return <<<HTML
-  <div id="map_canvas" style="width:{$width}px; height:{$height}px;"></div>
-    <script type="text/javascript" src="//maps.googleapis.com/maps/api/js?sensor=false"></script>
+  <div id="map_canvas_{$delta}" style="width:{$width}px; height:{$height}px;"></div>
     <script type="text/javascript">
       var posicion = new google.maps.LatLng({$lat}, {$alt});
         var mapOptions = {
@@ -293,22 +292,21 @@ function gmaps_block_draw_map($lat, $alt, $width, $height, $info_content) {
           zoom: 15,
           mapTypeId: google.maps.MapTypeId.ROADMAP
         };
-        var map = new google.maps.Map(document.getElementById("map_canvas"),
+        var map{$delta} = new google.maps.Map(document.getElementById("map_canvas_{$delta}"),
             mapOptions);
 
-        var marker = new google.maps.Marker({
+        var marker{$delta} = new google.maps.Marker({
         position: posicion,
-        map: map,
-        icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png",
-        title: "[CONF] Mi casa"
+        map: map{$delta},
+        icon: "http://maps.google.com/mapfiles/ms/icons/blue-dot.png"
       });
 
-        var info = new google.maps.InfoWindow({
+        var info{$delta} = new google.maps.InfoWindow({
           content: '{$info_content}'
         });
 
-        google.maps.event.addListener(marker, "click", function() {
-          info.open(map, marker);
+        google.maps.event.addListener(marker{$delta}, "click", function() {
+          info{$delta}.open(map{$delta}, marker{$delta});
         });
       </script>
 HTML;
